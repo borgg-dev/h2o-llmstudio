@@ -162,3 +162,5 @@ h2o_wave.state
 
 # playwright
 test-results/
+
+h2o-env/
