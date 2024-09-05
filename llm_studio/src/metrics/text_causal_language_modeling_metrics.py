@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import Any, Dict, List, Tuple, Union
-
+from angle_emb import AnglE
 import numpy as np
 import pandas as pd
 import torch
@@ -11,17 +11,98 @@ from openai import AzureOpenAI, OpenAI
 from sacrebleu import BLEU
 from torch import nn
 from tqdm import tqdm
-
+import re
 from llm_studio.python_configs.base import DefaultConfigProblemBase
 from llm_studio.src.datasets.text_utils import get_texts
 from llm_studio.src.utils.logging_utils import TqdmToLogger
-
+from scipy import spatial
+from rouge import Rouge
 logger = logging.getLogger(__name__)
 
 
 LLM_RETRY_ATTEMPTS = int(os.getenv("LLM_RETRY_ATTEMPTS", 3))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 60))
 
+modelAnglE = AnglE.from_pretrained("WhereIsAI/UAE-Large-V1", pooling_strategy="cls", device="cuda:0")
+modelAnglE = modelAnglE.cuda()
+
+def date_diff(ref_date, comp_date):
+    DATE_NOT_FOUND_CODE = 9999
+    if not comp_date:
+        return DATE_NOT_FOUND_CODE
+    if ref_date.isdigit():
+        comp_year = re.findall(r"\b\d{3,4}\b", comp_date)
+        if comp_year:
+            return abs(int(ref_date) - int(comp_year[0])) * 365
+        else:
+            return DATE_NOT_FOUND_CODE
+    try:
+        ref_date = pd.to_datetime(ref_date)
+        comp_date = pd.to_datetime(comp_date)
+        return abs((ref_date - comp_date).days)
+    except Exception as _:
+        return DATE_NOT_FOUND_CODE
+
+def parse_dates_from_text(text):
+    date_pattern = r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+\d{4}\b|\b\d{1,2}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember))\s+\d{4}\b|\b\d{4}\b"
+    date_regex = re.compile(date_pattern)
+    sentences = re.split(r"(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s", text)
+    for sentence in sentences:
+        dates = date_regex.findall(sentence)
+        if dates:
+            return dates[0]
+    return None
+
+def date_score(reference, completion):
+    score = 0
+    if not completion:
+        return score
+    ref_date = parse_dates_from_text(reference)
+    comp_date = parse_dates_from_text(completion)
+    score = np.exp(-(date_diff(ref_date, comp_date) ** 2 / 1000))
+    if score < 0.001:
+        score = 0
+    return score
+
+def relevance_score(reference, completion, model):
+    reference_embedding = model.encode(reference, to_numpy=True)
+    baseline = 1 - float(spatial.distance.cosine(reference_embedding.flatten(), model.encode("", to_numpy=True).flatten()))
+    emb = model.encode(completion, to_numpy=True)
+    score = 1 - float(spatial.distance.cosine(reference_embedding.flatten(), emb.flatten() - baseline))
+    return score
+
+def rouge_score(reference, completion):
+    rouge = Rouge()
+    if not completion or not reference:
+        return 0.0
+    return rouge.get_scores(reference, completion, avg=False)[0]["rouge-l"]["f"]
+
+######################## Final scores ############################################
+
+# Date Q&A score
+def date_qa_score(reference, completion) :
+    rouge = rouge_score(reference, completion)
+    date = date_score(reference, completion)
+    return 0.7 * date + 0.3 * rouge
+
+# Multi Choice metric
+def multi_choice_score(reference, completion):
+    matches = [
+        word
+        for word in re.sub(r"\W", " ", completion).split()
+        if word in ("A", "B", "C", "D")
+    ]
+    return int(len(matches) > 0 and matches[-1] == reference)
+
+# QA, Summarization and Organic Scoring metric
+def organic_synth_score(reference, completion):
+    rouge = rouge_score(reference, completion)
+    return rouge
+
+# QA, Summarization and Organic Scoring metric
+def others_score(reference, completion, modelAnglE):
+    relevance = relevance_score(reference, completion, modelAnglE)
+    return relevance
 
 def sacrebleu_score(
     cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame
@@ -208,6 +289,36 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
+# Compute metrics function
+def compute_metrics(eval_pred):
+
+    task_weights = { "date_qa": 0.17, "multi_choice": 0.09, "organic_synth": 0.16, "others": 0.58 }  
+    predictions, labels = eval_pred
+    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    
+    # Initialize dictionaries to accumulate metric results
+    metrics = {task: [] for task in task_weights.keys()}
+
+    # Calculate metrics for each task and accumulate results
+    for pred, label, task in zip(decoded_preds, decoded_labels, dataset['group']):
+        if task == 'date_qa':
+            metrics['date_qa'].append(date_qa_score(label, pred))
+        elif task == 'multi_choice':
+            metrics['multi_choice'].append(multi_choice_score(label, pred))
+        elif task == 'organic_synth' : 
+            metrics['organic_synth'].append(organic_synth_score(label, pred))
+        else:
+            metrics['others'].append(others_score(label, pred, modelAnglE))
+
+    # Average the accumulated metrics
+    avg_metrics = {task: sum(scores) / len(scores) if scores else 0 for task, scores in metrics.items()}
+    
+    # Calculate weighted average across tasks
+    weighted_avg = sum(avg_metrics.get(task, 0) * task_weights.get(task, 0) for task in task_weights)
+
+    # Return metrics dictionary with averaged metrics
+    return weighted_avg
 
 class Metrics:
     """
@@ -224,6 +335,7 @@ class Metrics:
         "Perplexity": (perplexity, "min", "mean"),
         "BLEU": (sacrebleu_score, "max", "mean"),
         "GPT": (gpt_score, "max", "mean"),
+        "CustomMetric": (compute_metrics, "max", "mean")
     }
 
     @classmethod

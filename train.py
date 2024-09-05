@@ -410,8 +410,8 @@ def run_train(
                     if objective_op(val_metric, best_val_metric):
                         logger.info(
                             f"Saving best model checkpoint: "
-                            f"val_{cfg.prediction.metric} {best_val_metric:.5} -> "
-                            f"{val_metric:.5} to {cfg.output_directory}"
+                            f"val_{cfg.prediction.metric} {best_val_metric:.5f} -> "
+                            f"{val_metric:.5f} to {cfg.output_directory}"
                         )
                         save_checkpoint(model=model, path=cfg.output_directory, cfg=cfg)
                         best_val_metric = val_metric
