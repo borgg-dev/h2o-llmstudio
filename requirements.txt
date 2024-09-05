@@ -185,3 +185,6 @@ xxhash==3.5.0; python_version >= '3.7'
 xyzservices==2024.6.0; python_version >= '3.8'
 yarl==1.9.4; python_version >= '3.7'
 zipp==3.20.0; python_version >= '3.8'
+angle_emb
+pipenv
+rouge

@@ -289,24 +289,22 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
-# Compute metrics function
-def compute_metrics(eval_pred):
+def compute_metrics(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> Dict[str, float]:
 
     task_weights = { "date_qa": 0.17, "multi_choice": 0.09, "organic_synth": 0.16, "others": 0.58 }  
-    predictions, labels = eval_pred
-    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    predictions = results["predicted_text"]
+    labels = results["target_text"]
     
     # Initialize dictionaries to accumulate metric results
     metrics = {task: [] for task in task_weights.keys()}
 
     # Calculate metrics for each task and accumulate results
-    for pred, label, task in zip(decoded_preds, decoded_labels, dataset['group']):
+    for pred, label, task in zip(predictions, labels, val_df['group']):
         if task == 'date_qa':
             metrics['date_qa'].append(date_qa_score(label, pred))
         elif task == 'multi_choice':
             metrics['multi_choice'].append(multi_choice_score(label, pred))
-        elif task == 'organic_synth' : 
+        elif task == 'organic_synth':
             metrics['organic_synth'].append(organic_synth_score(label, pred))
         else:
             metrics['others'].append(others_score(label, pred, modelAnglE))
@@ -316,8 +314,7 @@ def compute_metrics(eval_pred):
     
     # Calculate weighted average across tasks
     weighted_avg = sum(avg_metrics.get(task, 0) * task_weights.get(task, 0) for task in task_weights)
-
-    # Return metrics dictionary with averaged metrics
+    
     return weighted_avg
 
 class Metrics:

@@ -1,0 +1,6 @@
+#!/home/ilyas/Documents/h2o-llmstudio/h2o-env/bin/python3
+
+from deepspeed.launcher.runner import main
+
+if __name__ == '__main__':
+    main()
