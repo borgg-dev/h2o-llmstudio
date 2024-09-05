@@ -1,0 +1,39 @@
+name: Build and Push to Vorvan - Nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - id: 'auth'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_CRED_JSON }}'
+      - name: Configure Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Configure Docker Client
+        run: |-
+          gcloud auth configure-docker --quiet #authenticate to gcr
+      - name: Clean Docker images
+        run: |-
+          echo "Available storage before cleaning:"
+          df -h
+          docker system prune --all --force
+          echo "Available storage:"
+          df -h
+          echo "Removing dotnet"
+          sudo rm -rf /usr/share/dotnet
+          echo "Available storage:"
+          df -h
+      - name: Docker Build Image
+        run: |-
+          docker build -t gcr.io/$GCLOUD_PROJECT/h2oai/h2o-llmstudio:nightly .
+      - name: Push to Vorvan
+        run: |-
+          docker push gcr.io/$GCLOUD_PROJECT/h2oai/h2o-llmstudio:nightly
