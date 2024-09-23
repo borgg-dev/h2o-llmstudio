@@ -289,33 +289,33 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
-def compute_metrics(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> Dict[str, float]:
+def relevance_metric(results: Dict) -> NDArray:
 
-    task_weights = { "date_qa": 0.17, "multi_choice": 0.09, "organic_synth": 0.16, "others": 0.58 }  
     predictions = results["predicted_text"]
     labels = results["target_text"]
-    
-    # Initialize dictionaries to accumulate metric results
-    metrics = {task: [] for task in task_weights.keys()}
+
+    scores  = []
 
     # Calculate metrics for each task and accumulate results
-    for pred, label, task in zip(predictions, labels, val_df['group']):
-        if task == 'date_qa':
-            metrics['date_qa'].append(date_qa_score(label, pred))
-        elif task == 'multi_choice':
-            metrics['multi_choice'].append(multi_choice_score(label, pred))
-        elif task == 'organic_synth':
-            metrics['organic_synth'].append(organic_synth_score(label, pred))
-        else:
-            metrics['others'].append(others_score(label, pred, modelAnglE))
+    for pred, label in zip(predictions, labels):
+        scores.append(relevance_score(label, pred))
 
-    # Average the accumulated metrics
-    avg_metrics = {task: sum(scores) / len(scores) if scores else 0 for task, scores in metrics.items()}
-    
-    # Calculate weighted average across tasks
-    weighted_avg = sum(avg_metrics.get(task, 0) * task_weights.get(task, 0) for task in task_weights)
-    
-    return weighted_avg
+
+    return np.array(scores)
+
+def multichoice_metric(results: Dict) -> NDArray :
+
+    predictions = results["predicted_text"]
+    labels = results["target_text"]
+
+    scores  = []
+
+    # Calculate metrics for each task and accumulate results
+    for pred, label in zip(predictions, labels):
+        scores.append(multi_choice_score(label, pred))
+
+
+    return np.array(scores)
 
 class Metrics:
     """
@@ -332,7 +332,8 @@ class Metrics:
         "Perplexity": (perplexity, "min", "mean"),
         "BLEU": (sacrebleu_score, "max", "mean"),
         "GPT": (gpt_score, "max", "mean"),
-        "CustomMetric": (compute_metrics, "max", "mean")
+        "Relevance": (relevance_metric, "max", "mean"),
+        "MultiChoice": (multichoice_metric, "max", "mean"),
     }
 
     @classmethod
