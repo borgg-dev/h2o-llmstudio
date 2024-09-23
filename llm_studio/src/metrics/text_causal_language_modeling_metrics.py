@@ -85,6 +85,12 @@ def date_qa_score(reference, completion) :
     date = date_score(reference, completion)
     return 0.7 * date + 0.3 * rouge
 
+# Programming score
+def programming_score(reference, completion, model) :
+    rouge = rouge_score(reference, completion)
+    relevance = relevance_score(reference, completion, model)
+    return 0.5*rouge + 0.5*relevance
+
 # Multi Choice metric
 def multi_choice_score(reference, completion):
     matches = [
@@ -289,6 +295,20 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
+def programming_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray:
+
+    predictions = results["predicted_text"]
+    labels = results["target_text"]
+
+    scores  = []
+
+    # Calculate metrics for each task and accumulate results
+    for pred, label in zip(predictions, labels):
+        scores.append(programming_score(label, pred, modelAnglE))
+
+
+    return np.array(scores)
+
 def relevance_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray:
 
     predictions = results["predicted_text"]
@@ -334,6 +354,8 @@ class Metrics:
         "GPT": (gpt_score, "max", "mean"),
         "Relevance": (relevance_metric, "max", "mean"),
         "MultiChoice": (multichoice_metric, "max", "mean"),
+        "Programming": (programming_metric, "max", "mean")
+
     }
 
     @classmethod
