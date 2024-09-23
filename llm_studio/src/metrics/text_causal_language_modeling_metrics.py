@@ -289,7 +289,7 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
-def relevance_metric(results: Dict) -> NDArray:
+def relevance_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray:
 
     predictions = results["predicted_text"]
     labels = results["target_text"]
@@ -303,7 +303,7 @@ def relevance_metric(results: Dict) -> NDArray:
 
     return np.array(scores)
 
-def multichoice_metric(results: Dict) -> NDArray :
+def multichoice_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray :
 
     predictions = results["predicted_text"]
     labels = results["target_text"]

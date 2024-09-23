@@ -119,21 +119,7 @@ def read_dataframe(
         df_meta = pd.DataFrame(columns=df.columns)
         df_meta.to_csv(meta_info_path, index=False)
 
-    # Filter the dataset to keep only the specified task types
-    task_types_to_keep = ["date_qa", "qa", "multi_choice", "summarization", "organic", "organic_synth"]
-
-    df_filtered = df[df['task'].isin(task_types_to_keep)]
-
-    df_filtered = df_filtered.dropna(subset=['challenge', 'reference']).reset_index(drop=True)
-
-    # Create a new column named 'group' and assign values based on the task type
-    df_filtered['group'] = df_filtered['task'].apply(lambda x: 'date_qa' if x == 'date_qa' 
-                                                    else 'multi_choice' if x == 'multi_choice' 
-                                                    else 'organic_synth' if x == 'organic_synth'
-                                                    else 'others')
-
-
-    return df_filtered
+    return df
 
 
 def get_fill_columns(cfg: DefaultConfigProblemBase) -> List[str]:
