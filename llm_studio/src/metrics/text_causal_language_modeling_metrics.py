@@ -298,7 +298,7 @@ def relevance_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.Da
 
     # Calculate metrics for each task and accumulate results
     for pred, label in zip(predictions, labels):
-        scores.append(relevance_score(label, pred))
+        scores.append(relevance_score(label, pred, modelAnglE))
 
 
     return np.array(scores)
