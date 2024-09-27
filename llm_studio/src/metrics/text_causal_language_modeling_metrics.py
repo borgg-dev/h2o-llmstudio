@@ -295,6 +295,21 @@ class Perplexity(nn.Module):
 def perplexity(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame):
     return results["perplexity"].detach().float().cpu().numpy()
 
+def date_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray:
+
+    predictions = results["predicted_text"]
+    labels = results["target_text"]
+
+    scores  = []
+
+    # Calculate metrics for each task and accumulate results
+    for pred, label in zip(predictions, labels):
+        scores.append(date_qa_score(label, pred))
+
+
+    return np.array(scores)
+
+
 def programming_metric(cfg: DefaultConfigProblemBase, results: Dict, val_df: pd.DataFrame) -> NDArray:
 
     predictions = results["predicted_text"]
@@ -354,8 +369,8 @@ class Metrics:
         "GPT": (gpt_score, "max", "mean"),
         "Relevance": (relevance_metric, "max", "mean"),
         "MultiChoice": (multichoice_metric, "max", "mean"),
-        "Programming": (programming_metric, "max", "mean")
-
+        "Programming": (programming_metric, "max", "mean"),
+        "Date": (date_metric, "max", "mean"),       
     }
 
     @classmethod
